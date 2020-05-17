@@ -1,8 +1,11 @@
 import json
 import time
 import xml.sax
-from pathlib import Path
+from pathlib import Path, PosixPath
 from typing import List
+import datetime as dt
+from collections import Iterable
+from geojson_rewind import rewind
 
 import geopandas as gpd
 from shapely.geometry import Point, Polygon, mapping
@@ -16,12 +19,11 @@ class OSM2GeoJSON:
         self.input_filepath = input_filepath
         self.output_intermediate = output_intermediate
         self.intermediate_dir = intermediate_dir
+        self.features_ndjson = \
+            Path(f"{self.intermediate_dir}/singapore-buildings-features.ndjson").resolve()
+        self.dest_geojson = \
+            Path(f"{self.intermediate_dir}/{self.input_filepath.stem}-4326.geojson").resolve()
         self.handler = OSMContentHandler()
-        self.geojson = {
-            "type": "FeatureCollection",
-            "crs": {"type": "name",
-                    "properties": {"name": "urn:ogc:def:crs:EPSG::4326"}},
-            "features": []}
         self.ways = {}
         self.nodes = {}
 
@@ -30,18 +32,12 @@ class OSM2GeoJSON:
         self.parse_xml_content()
         toc = time.process_time()
         print(f"Parsing OSM took {toc-tic} seconds.")
-        time.sleep(5.0)
         tic = time.process_time()
-        self.convert_to_geojson()
+        self.convert_to_features()
         toc = time.process_time()
-        print(f"Conversion to GeoJSON took {toc - tic} seconds.")
-        print(f"GeoJSON has a total of "
-              f"{len(self.geojson['features'])} features.")
+        print(f"Conversion to GeoJSON features took {toc - tic} seconds.")
         tic = time.process_time()
-        dest_file = Path(f"{self.intermediate_dir}/"
-                         f"{self.input_filepath.stem}-"
-                         f"4326.geojson").resolve()
-        self.write_geojson(dest_file)
+        self.write_geojson()
         toc = time.process_time()
         print(f"Writing to GeoJSON took {toc - tic} seconds.")
 
@@ -83,7 +79,31 @@ class OSM2GeoJSON:
         gdf_dest.to_crs(epsg=int(self.epsg))
         gdf_dest.to_file(dest_file, driver='GeoJSON')
 
-    def convert_to_geojson(self):
+    @staticmethod
+    def rewind_geojson(geojson: dict) -> List:
+        rewound = rewind(geojson)
+        return rewound
+
+    def iterate_ways(self) -> Iterable:
+        for wy_id, wy in self.ways.items():
+            feature = {"type": "Feature",
+                       "osm_id": f"way_{wy_id}"}
+
+            polygon = self._get_footprint_geometry(wy["nodes"])
+
+            if polygon:
+                feature["geometry"] = mapping(polygon)
+                # need to make it list for rewind (to adhere to right hand rule)
+                feature["geometry"]["coordinates"] = list(feature["geometry"]["coordinates"])
+
+            properties = self._get_properties(wy)
+            if properties != {}:
+                feature['properties'] = properties
+
+            if "geometry" in feature.keys():
+                yield self.rewind_geojson(feature)
+
+    def convert_to_features(self):
         if len(self.ways) == 0 and len(self.nodes) == 0:
             osm_obj_json = Path(
                 f"{self.intermediate_dir}/{self.input_filepath.stem}-obj.json") \
@@ -92,26 +112,20 @@ class OSM2GeoJSON:
                 data = json.load(json_file)
                 self.ways = data["elements"]["ways"]
                 self.nodes = data["elements"]["nodes"]
+        self.output_features_ndjson()
 
-        for wy_id, wy in self.ways.items():
-            feature = {"type": "Feature",
-                       "osm_id": f"way/{wy_id}",
-                       "properties": {}}
+    def output_features_ndjson(self):
+        with open(str(self.features_ndjson), mode="w") as ndjson:
+            for feature in self.iterate_ways():
+                if 'geometry' in feature.keys() and len(feature['geometry']) > 0:
+                    # only add feature when has valid geometry
+                    json.dump(feature, ndjson)
+                    ndjson.write('\n')
 
-            polygon = self._get_footprint_geometry(wy["nodes"])
-
-            if polygon:
-                feature["geometry"] = mapping(polygon)
-
-            properties = self._get_properties(wy)
-            if properties != {}:
-                feature['properties'] = properties
-
-            if 'geometry' in feature.keys() and len(feature['geometry']) > 0:
-                # only add feature when has valid geometry
-                self.geojson["features"].append(feature)
-
-    def write_geojson(self, dest_file: Path):
-        with open(str(dest_file), mode="w") as f:
-            json.dump(self.geojson, f)
-
+    def write_geojson(self):
+        gjson = {"type": "FeatureCollection"}
+        with open(str(self.features_ndjson), mode="r") as ndjson:
+            gjson["features"] = [json.loads(line) for line in ndjson.readlines()]
+        print(f"There are {len(gjson['features'])} features/buildings.")
+        with open(str(self.dest_geojson), mode="w") as geojson:
+            json.dump(gjson, geojson)

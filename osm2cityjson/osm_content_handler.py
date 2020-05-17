@@ -26,18 +26,18 @@ class OSMContentHandler(xml.sax.handler.ContentHandler):
                                      **attrs)
                 self._element.update({k: float(attrs[k]) for k in attrs.keys()
                                       if k in ('lat', 'lon')})
-                self._element.update({k: int(attrs[k]) for k in attrs.keys()
+                self._element.update({k: str(attrs[k]) for k in attrs.keys()
                                       if k in ('id', 'uid', 'version', 'changeset')})
 
             elif name == 'tag':
                 self._element['tags'].update({attrs['k']: attrs['v']})
 
             elif name == 'nd':
-                self._element['nodes'].append(int(attrs['ref']))
+                self._element['nodes'].append(str(attrs['ref']))
 
             elif name == 'member':
                 member_dict = {"type": str(attrs["type"]),
-                               "ref": int(attrs["ref"])}
+                               "ref": str(attrs["ref"])}
                 if str(attrs["role"]).strip() != "":
                     member_dict.update({"role": str(attrs["role"])})
                 self._element['members'].append(member_dict)
@@ -54,7 +54,7 @@ class OSMContentHandler(xml.sax.handler.ContentHandler):
             if len(self._element["members"]) == 0:
                 self._element.pop("members")
 
-            _id = int(self._element.pop("id"))
+            _id = str(self._element.pop("id"))
             if name == 'node':
                 self.nodes.update({_id: self._element})
 
