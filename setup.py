@@ -11,10 +11,11 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 required_packages = [
-        'geopandas',
-        'Shapely',
-        'Fiona',
-        'scipy'
+    'geopandas',
+    'Shapely',
+    'Fiona',
+    'scipy',
+    'jsonref'
 ]
 
 setup(

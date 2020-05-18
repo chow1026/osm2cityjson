@@ -6,6 +6,7 @@ from typing import List
 import datetime as dt
 from collections import Iterable
 from geojson_rewind import rewind
+import random
 
 import geopandas as gpd
 from shapely.geometry import Point, Polygon, mapping
@@ -14,24 +15,29 @@ from osm2cityjson.osm_content_handler import OSMContentHandler
 
 
 class OSM2GeoJSON:
-    def __init__(self, input_filepath: Path, output_intermediate: bool = True,
-                 intermediate_dir: Path = None):
+    def __init__(self, input_filepath: Path, output_dir: Path = None,
+                 sample_size: int = 0, skip_osm_parsing: bool = False):
         self.input_filepath = input_filepath
-        self.output_intermediate = output_intermediate
-        self.intermediate_dir = intermediate_dir
+        if output_dir:
+            self.output_dir = output_dir
+        else:
+            self.output_dir = Path("/tmp/osm2geojson/")
+        self.sample_size = sample_size
+        self.skip_osm_parsing = skip_osm_parsing
         self.features_ndjson = \
-            Path(f"{self.intermediate_dir}/singapore-buildings-features.ndjson").resolve()
+            Path(f"{self.output_dir}/singapore-buildings-features.ndjson").resolve()
         self.dest_geojson = \
-            Path(f"{self.intermediate_dir}/{self.input_filepath.stem}-4326.geojson").resolve()
+            Path(f"{self.output_dir}/{self.input_filepath.stem}.geojson").resolve()
         self.handler = OSMContentHandler()
         self.ways = {}
         self.nodes = {}
 
     def run(self):
-        tic = time.process_time()
-        self.parse_xml_content()
-        toc = time.process_time()
-        print(f"Parsing OSM took {toc-tic} seconds.")
+        if not self.skip_osm_parsing:
+            tic = time.process_time()
+            self.parse_xml_content()
+            toc = time.process_time()
+            print(f"Parsing OSM took {toc-tic} seconds.")
         tic = time.process_time()
         self.convert_to_features()
         toc = time.process_time()
@@ -44,13 +50,12 @@ class OSM2GeoJSON:
     def parse_xml_content(self):
         with open(str(self.input_filepath), mode='rb') as osm:
             xml.sax.parse(osm, self.handler)
-            if self.output_intermediate:
-                osm_obj_json = Path(
-                    f"{self.intermediate_dir}/"
-                    f"{self.input_filepath.stem}-obj.json") \
-                    .resolve()
-                with open(osm_obj_json, mode="w") as f:
-                    json.dump(self.handler.object, f)
+            osm_obj_json = Path(
+                f"{self.output_dir}/"
+                f"{self.input_filepath.stem}-osm.json") \
+                .resolve()
+            with open(osm_obj_json, mode="w") as f:
+                json.dump(self.handler.object, f)
             self.ways = self.handler.object["elements"]["ways"]
             self.nodes = self.handler.object["elements"]["nodes"]
 
@@ -65,8 +70,8 @@ class OSM2GeoJSON:
             return None
 
     @staticmethod
-    def _get_properties(attrs: dict) -> dict:
-        properties = {}
+    def _get_properties(wy_id: str, attrs: dict) -> dict:
+        properties = {"osm_id": f"way_{wy_id}"}
         properties.update({k: attrs[k] for k in attrs.keys() if k not in (
             'tags', 'nodes')})
         properties.update(
@@ -74,10 +79,11 @@ class OSM2GeoJSON:
         return properties
 
     def _update_epsg(self, input_file: Path, dest_file: Path):
-        gdf = gpd.read_file(str(input_file))
-        gdf_dest = gdf.copy()
-        gdf_dest.to_crs(epsg=int(self.epsg))
-        gdf_dest.to_file(dest_file, driver='GeoJSON')
+        pass
+        # gdf = gpd.read_file(str(input_file))
+        # gdf_dest = gdf.copy()
+        # gdf_dest.to_crs(epsg=int(self.epsg))
+        # gdf_dest.to_file(dest_file, driver='GeoJSON')
 
     @staticmethod
     def rewind_geojson(geojson: dict) -> List:
@@ -96,7 +102,7 @@ class OSM2GeoJSON:
                 # need to make it list for rewind (to adhere to right hand rule)
                 feature["geometry"]["coordinates"] = list(feature["geometry"]["coordinates"])
 
-            properties = self._get_properties(wy)
+            properties = self._get_properties(wy_id, wy)
             if properties != {}:
                 feature['properties'] = properties
 
@@ -106,7 +112,7 @@ class OSM2GeoJSON:
     def convert_to_features(self):
         if len(self.ways) == 0 and len(self.nodes) == 0:
             osm_obj_json = Path(
-                f"{self.intermediate_dir}/{self.input_filepath.stem}-obj.json") \
+                f"{self.output_dir}/{self.input_filepath.stem}-osm.json") \
                 .resolve()
             with open(osm_obj_json) as json_file:
                 data = json.load(json_file)
@@ -125,7 +131,12 @@ class OSM2GeoJSON:
     def write_geojson(self):
         gjson = {"type": "FeatureCollection"}
         with open(str(self.features_ndjson), mode="r") as ndjson:
-            gjson["features"] = [json.loads(line) for line in ndjson.readlines()]
+            features = ndjson.readlines()
+            if self.sample_size > 0:
+                features = random.sample(
+                    population=features, k=self.sample_size)
+
+            gjson["features"] = [json.loads(line) for line in features]
         print(f"There are {len(gjson['features'])} features/buildings.")
         with open(str(self.dest_geojson), mode="w") as geojson:
             json.dump(gjson, geojson)

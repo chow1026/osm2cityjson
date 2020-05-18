@@ -1,0 +1,3 @@
+[submodule "cjio"]
+	path = cjio
+	url = git@chowy.github.com:cityjson/cjio.git
