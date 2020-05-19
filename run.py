@@ -17,7 +17,7 @@ osm_json_filepath = Path(f"{output_dir}/{input_filepath.stem}-osm.json")
 skip_osm_parsing = True if osm_json_filepath.exists() and \
         osm_json_filepath.is_file() else False
 # set 0 if generate full dataset
-sample_size = 1000
+sample_size = 0
 tik = process_time()
 OSM2GeoJSON(input_filepath=input_filepath,
             output_dir=output_dir,
