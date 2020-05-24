@@ -4,33 +4,36 @@ import json
 from pathlib import Path
 from sys import platform
 from typing import List, Iterable
-
+from enum import Enum
 import fiona
 import jsonref
 from shapely.geometry import shape
 from shapely.geometry.polygon import Polygon
 
+
 ATTR_KEY_MAPPING = {
-        "timestamp": "creationDate",
-        "height": "measuredHeight",
-        "building:levels": "storeysAboveGround",
-        "roof:shape": "roofType",
-        "year_of_construction": "yearOfConstruction",
-        "year": "yearOfConstruction"
-    }
+        "creationDate": "timestamp",
+        "terminationDate": None,
+        "class": None,
+        "function": None,
+        "usage": None,
+        "measuredHeight": "height",
+        "roofType": "roof:shape",
+        "storeysAboveGround": "building:levels",
+        "storeysBelowGround": None,
+        "storeyHeightsAboveGround": None,
+        "storeyHeightsBelowGround": None,
+        "yearOfConstruction": "year_of_construction",
+        "yearOfDemolition": None}
 
 ADDR_KEY_MAPPING = {
-    "addr:housename": "ThoroughfareNumber",
-    "addr:street": "ThoroughfareName",
-    "addr:city": "LocalityName",
-    "addr:postcode": "PostalCode",
-    "addr:country": "CountryName"
-}
+    "ThoroughfareNumber": "addr:housename",
+    "ThoroughfareName": "addr:street",
+    "LocalityName": "addr:city",
+    "PostalCode": "addr:postcode",
+    "CountryName": "addr:country"}
 
 
-
-## Supposedly you had set up git submodule of cjio set up in cjio folder
-## This automatically detect the lastest supported schema versions
 class CityJSONSchema:
     def __init__(self, version: str = None):
         self.supported_versions = self._get_supported_schema_versions()
@@ -49,7 +52,7 @@ class CityJSONSchema:
 
     @staticmethod
     def _get_supported_schema_versions() -> List:
-        all_schemas_dir = Path("cjio/cjio/schemas")
+        all_schemas_dir = Path("schemas")
         supported_versions = []
         if not all_schemas_dir.exists() or not all_schemas_dir.is_dir():
             raise (f"Schema directory doesn't not exists. Make sure cjio is "
@@ -61,7 +64,7 @@ class CityJSONSchema:
 
     @staticmethod
     def _validate_schema_folder(version: str) -> Path:
-        schema_dir = Path(f"cjio/cjio/schemas/{version}")
+        schema_dir = Path(f"schemas/{version}")
         if schema_dir.exists() and schema_dir.is_dir():
             return schema_dir.resolve()
         else:
@@ -90,25 +93,38 @@ class CityJSONSchema:
         return schema
 
 
-class CityJSONBuilding:
-    def __init__(self, geom: Polygon, properties: dict):
+class CityObjectTypes(Enum):
+    Building = {
+        "type": "Building",
+        "attributes": None,     # should be a dict
+        "address": None,        # should be a dict
+        "geometry": None}       # should be a list
+    BuildingPart = {
+        "type": "BuildingPart",
+        "parent": None,         # should be a list
+        "attributes": None,     # should be a dict
+        "address": None,        # should be a dict
+        "geometry": None}       # should be a list
+
+
+class CityObject:
+    def __init__(self, object_type: Enum, geom: Polygon, properties: dict):
         self.properties = properties
         self.geom = geom
         self.height = self._parse_height()
         self.vertices = []
-        self.bldg = {
-            "type": "Building",
-            "attributes": self._parse_attributes(),
-            "address": self._parse_address(),
-            "geometry": self._parse_geometries_and_surfaces()}
+        self.object = object_type.value
 
-    def get_bldg_object(self):
-        return self.bldg
+    def get_object(self):
+        self.object.update({"attributes": self._parse_attributes()})
+        self.object.update({"address": self._parse_address()})
+        self.object.update({"geometry": self._parse_geometries_and_surfaces()})
+        return self.object
 
-    def get_bldg_height(self):
+    def get_height(self):
         return self.height
 
-    def get_bldg_vertices(self):
+    def get_vertices(self):
         return self.vertices
 
     def _parse_address(self) -> dict:
@@ -121,13 +137,15 @@ class CityJSONBuilding:
                 in ATTR_KEY_MAPPING.keys() and v is not None}
         attr.update({k: v for k, v in self.properties.items()
                      if k not in ATTR_KEY_MAPPING.keys()})
+        if "measuredHeight" in attr.keys():
+            attr["measuredHeight"] = float(attr["measuredHeight"])
         return attr
 
     def _parse_height(self) -> float:
         if self.properties["height"] and float(self.properties["height"]) > 0:
-            return self.properties["height"]
+            return float(self.properties["height"])
         else:
-            return None
+            return 10.0
 
     def _process_ext_ring(self, surfaces: List) -> List:
         ext_ring = list(self.geom.exterior.coords)  # -- exterior ring of each
@@ -214,46 +232,19 @@ class CityJSONBuilding:
         surfaces.append(output)
 
 
-class GeoJSON2CityJSON:
-    def __init__(self, schema_obj: CityJSONSchema, schema_name: str,
-                 geojson_filepath: Path, dest_filepath: Path,
-                 metadata: dict = None):
+class CityJSON:
+    def __init__(self, schema_obj: CityJSONSchema, city_objects: dict,
+                 vertices: List, metadata: dict = None):
         self.schema_obj = schema_obj
-        self.schema = schema_obj.fetch_schema(schema_name)
-        self.dest_filepath = dest_filepath
-        if self._verify_geojson_filepath(geojson_filepath):
-            self.geojson_filepath = geojson_filepath
-            # self.features = self._get_geojson_features()
+        self.city_objects = city_objects
+        self.vertices = vertices
         self.cityjson = {
             "type": "CityJSON",
-            "version": self.schema_obj.get_version()}
+            "version": self.schema_obj.get_version(),
+            "CityObjects": self.city_objects,
+            "vertices": self.vertices}
         if metadata:
             self.cityjson["metadata"] = metadata
 
-    @staticmethod
-    def _verify_geojson_filepath(filepath: Path) -> bool:
-        return True if filepath.exists() else False
-
-    def _iterate_feature_collection(self) -> Iterable:
-        for feature in fiona.open(self.geojson_filepath):
-            bldg_id = f"feat_{feature['id']}"
-            geom = shape(feature['geometry'])
-            attributes = feature['properties']
-            bldg = CityJSONBuilding(geom, attributes)
-            yield bldg_id, bldg.get_bldg_object(), bldg.get_bldg_vertices()
-
-    def _write_cityjson(self):
-        with open(str(self.dest_filepath), 'w') as f:
-            json.dump(self.cityjson, f)
-
-    def run(self):
-        city_objects = {}
-        vertices = []
-        for bldg_id, bldg_cityobject, bldg_vertices in self._iterate_feature_collection():
-            city_objects.update({bldg_id: bldg_cityobject})
-            vertices.append(bldg_vertices)
-        self.cityjson["CityObjects"] = city_objects
-        self.cityjson["vertices"] = vertices
-        self._write_cityjson()
-
-
+    def get_cityjson(self):
+        return self.cityjson

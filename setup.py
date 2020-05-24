@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from setuptools import setup
+from setuptools import setup, find_packages
 
 import osm2cityjson
 
@@ -15,7 +15,9 @@ required_packages = [
     'Shapely',
     'Fiona',
     'scipy',
-    'jsonref'
+    'jsonref',
+    'click',
+    'jsonschema'
 ]
 
 setup(
@@ -27,9 +29,9 @@ setup(
     long_description_content_type="text/markdown",
     url='https://github.com/chow1026/osm2cityjson',
     python_requires='~=3.7',
-    packages=['cjio', 'osm2cityjson'],
+    packages=find_packages(),
     install_requires=required_packages,
     entry_points={
-          'console_scripts': ['osm2cityjson=osm2cityjson.osm2cityjson:convert'],
-    }
+          'console_scripts': ['osm2cityjson=osm2cityjson.core:cli']
+    },
 )

@@ -1,3 +1,5 @@
 cjio/**/*.*
 data/**
 .idea/**
+osm2geojson/**
+osm2cityjson.egg-info/**
