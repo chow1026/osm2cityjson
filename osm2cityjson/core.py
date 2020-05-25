@@ -1,4 +1,4 @@
-import os.path
+from pathlib import Path
 from os import makedirs
 
 import click
@@ -7,12 +7,30 @@ import sys
 import copy
 import glob
 
+from osm.osm_content_handler import OSMContentHandler
+from util.logging import Logger
+
 
 
 @click.command()
+@click.option('--input_file', '-i', required=True, type=str)
+
+@click.option('--output_file', '-o', required=True, type=str)
+@click.option('--debug_mode', '-d', required=True, type=bool)
 def cli():
     print(f"osm2cityjson cli")
+    logger = Logger(debug=False)
 
+
+
+def output_cityjson(
+        input_filepath: Path, output_dir: Path, logger: Logger):
+    xml_handler = OSMContentHandler()
+    osm = OSM(input_filepath, xml_handler, logger)
+    ways, nodes = self.osm.run()
+    osm2cityjson = OSM2CityJSON(self.ways, self.nodes, self.logger,
+                                self.cityjson_path)
+    osm2cityjson.run()
 
 
 

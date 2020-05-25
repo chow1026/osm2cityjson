@@ -10,7 +10,7 @@ class TestOSM(BaseTest):
         self._make_test_dir(self.test_output_dir)
         self.input_filepath = self.fixture_dir / "sample-buildings.osm"
         self.handler = OSMContentHandler()
-        self.osm = OSM(self.input_filepath, self.handler, self.logger, self.test_output_dir)
+        self.osm = OSM(self.input_filepath, self.handler, self.logger)
 
     def test_run(self):
         actual_ways, actual_nodes = self.osm.run()

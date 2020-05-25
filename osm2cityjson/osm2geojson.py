@@ -9,25 +9,22 @@ from geojson_rewind import rewind
 from shapely.geometry import Point, Polygon, mapping
 
 from geojson.geojson import GeoJSON, GeoJSONObjectTypes
-from osm.osm import OSM
 from util.logging import Logger
 
 
 class OSM2GeoJSON:
-    def __init__(self, osm: OSM, logger: Logger, geojson_path: Path,
-                 geojson_name: str = None, sample_size: int = 0):
-        self.osm = osm
+    def __init__(self, ways: dict, nodes: dict, logger: Logger, geojson_path:
+    Path, geojson_name: str = None, sample_size: int = 0):
         self.logger = logger
         self.geojson_path = geojson_path.resolve()
         self.sample_size = sample_size
         self.geojson_name = geojson_name
-        self.ways = None
-        self.nodes = None
+        self.ways = ways
+        self.nodes = nodes
         self.features = []
 
     def run(self):
         tic = time.process_time()
-        self.ways, self.nodes = self.osm.run()
         self.convert_to_features()
         self.write_geojson()
         toc = time.process_time()

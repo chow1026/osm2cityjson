@@ -14,15 +14,15 @@ class TestOSM2GeoJSON(BaseTest):
         self._make_test_dir(self.test_output_dir)
         self.input_filepath = self.fixture_dir / "sample-buildings.osm"
         self.handler = OSMContentHandler()
-        self.osm = OSM(self.input_filepath, self.handler, self.logger,
-                       self.test_output_dir)
+        self.osm = OSM(self.input_filepath, self.handler, self.logger)
+        self.ways, self.nodes = self.osm.run()
         self.geojson_path = self.test_output_dir / "sample-buildings.geojson"
         self.sample_geojson_path = \
             self.test_output_dir / "3-sample-buildings.geojson"
 
     def test_run(self):
         sample_size = 0     # get all
-        osm2geojson = OSM2GeoJSON(self.osm, self.logger,
+        osm2geojson = OSM2GeoJSON(self.ways, self.nodes, self.logger,
                                   self.geojson_path, "sample building")
         osm2geojson.run()
         actual_filepath = Path(
@@ -37,7 +37,9 @@ class TestOSM2GeoJSON(BaseTest):
 
     def test_run_sample(self):
         sample_size = 3
-        osm2geojson = OSM2GeoJSON(osm=self.osm, logger=self.logger,
+        osm2geojson = OSM2GeoJSON(ways=self.ways,
+                                  nodes=self.nodes,
+                                  logger=self.logger,
                                   geojson_path=self.sample_geojson_path,
                                   geojson_name="3 sample buildings",
                                   sample_size=sample_size)

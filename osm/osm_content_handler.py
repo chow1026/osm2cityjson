@@ -56,10 +56,10 @@ class OSMContentHandler(xml.sax.handler.ContentHandler):
 
             _id = str(self._element.pop("id"))
             if name == 'node':
-                self.nodes.update({_id: self._element})
+                self.object['elements']['nodes'].update({_id: self._element})
 
             if name == 'way':
-                self.ways.update({_id: self._element})
+                self.object['elements']['ways'].update({_id: self._element})
 
             if name == 'relation':
-                self.relations.update({_id: self._element})
+                self.object['elements']['relations'].update({_id: self._element})

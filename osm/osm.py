@@ -10,9 +10,8 @@ from util.logging import Logger
 
 class OSM:
     def __init__(self, input_filepath: Path, handler: OSMContentHandler,
-                 logger: Logger, output_dir: Path = None):
+                 logger: Logger):
         self.input_filepath = input_filepath
-        self.output_dir = output_dir
         self.logger = logger
         self.handler = handler
         self.ways = {}
@@ -32,4 +31,3 @@ class OSM:
             xml.sax.parse(osm, self.handler)
             self.ways = self.handler.object["elements"]["ways"]
             self.nodes = self.handler.object["elements"]["nodes"]
-        print(len(self.ways), len(self.nodes))

@@ -1,62 +1,38 @@
 import copy
-import datetime as dt
-import json
+from enum import Enum
 from pathlib import Path
 from sys import platform
-from typing import List, Iterable
-from enum import Enum
-import fiona
+from typing import List
+
 import jsonref
+import jsonschema
 from shapely.geometry import shape
-from shapely.geometry.polygon import Polygon
 
-
-ATTR_KEY_MAPPING = {
-        "creationDate": "timestamp",
-        "terminationDate": None,
-        "class": None,
-        "function": None,
-        "usage": None,
-        "measuredHeight": "height",
-        "roofType": "roof:shape",
-        "storeysAboveGround": "building:levels",
-        "storeysBelowGround": None,
-        "storeyHeightsAboveGround": None,
-        "storeyHeightsBelowGround": None,
-        "yearOfConstruction": "year_of_construction",
-        "yearOfDemolition": None}
-
-ADDR_KEY_MAPPING = {
-    "ThoroughfareNumber": "addr:housename",
-    "ThoroughfareName": "addr:street",
-    "LocalityName": "addr:city",
-    "PostalCode": "addr:postcode",
-    "CountryName": "addr:country"}
+from util.logging import Logger
 
 
 class CityJSONSchema:
-    def __init__(self, version: str = None):
+    def __init__(self, logger: Logger, version: str = None):
+        self.logger = logger
         self.supported_versions = self._get_supported_schema_versions()
         if version:
             # verify if it is valid version
             if version in self.supported_versions:
                 self.version = version
-                self.schema_dir = self._validate_schema_folder(version)
+                self.schema_dir = self._validate_schema_folder(self.version)
             else:
-                print(f"Version {version} is an invalid version.")
+                self.logger.log_error(f"Version {version} is an invalid version.")
         else:
             # use the latest version if none specified
-            self.version = self.supported_versions[-1]
-            self.schema_dir = self._validate_schema_folder(version)
-        print(str(self.schema_dir))
+            self.version = sorted(self.supported_versions)[-1]
+            self.schema_dir = self._validate_schema_folder(self.version)
 
     @staticmethod
     def _get_supported_schema_versions() -> List:
-        all_schemas_dir = Path("schemas")
+        all_schemas_dir = Path("cityjson/schemas").resolve()
         supported_versions = []
         if not all_schemas_dir.exists() or not all_schemas_dir.is_dir():
-            raise (f"Schema directory doesn't not exists. Make sure cjio is "
-                   f"checked out as submodule.")
+            print(f"Schemas directory doesn't not exists.")
         else:
             supported_versions = [child.name for child in
                                   all_schemas_dir.iterdir()]
@@ -64,11 +40,11 @@ class CityJSONSchema:
 
     @staticmethod
     def _validate_schema_folder(version: str) -> Path:
-        schema_dir = Path(f"schemas/{version}")
+        schema_dir = Path(f"cityjson/schemas/{version}").resolve()
         if schema_dir.exists() and schema_dir.is_dir():
-            return schema_dir.resolve()
+            return schema_dir
         else:
-            print(f"Schema version {version} doens't exist.")
+            print(f"Schema version {version} doesn't exist.")
 
     def _get_jsonref_base_uri(self) -> str:
         if platform == "darwin" or platform == "linux" or platform == "linux2":
@@ -76,7 +52,6 @@ class CityJSONSchema:
         else:
             replaced = str(self.schema_dir).replace('\\', '/')
             base_uri = f"file://{replaced}/"
-        print(base_uri)
         return base_uri
 
     def get_version(self) -> str:
@@ -85,7 +60,6 @@ class CityJSONSchema:
     def fetch_schema(self, schema_name: str) -> dict:
         schema_file = Path(
             f"{self.schema_dir}/{schema_name}.schema.json").resolve()
-        print(str(schema_file))
         with open(str(schema_file)) as file:
             schema = jsonref.loads(
                 file.read(), jsonschema=True,
@@ -107,24 +81,44 @@ class CityObjectTypes(Enum):
         "geometry": None}       # should be a list
 
 
+ATTR_KEY_MAPPING = {
+        "timestamp": "creationDate",
+        "height": "measuredHeight",
+        "building:levels": "storeysAboveGround",
+        "roof:shape": "roofType",
+        "year_of_construction": "yearOfConstruction",
+        "year": "yearOfConstruction"
+    }
+
+ADDR_KEY_MAPPING = {
+    "addr:housenumber": "ThoroughfareNumber",
+    "addr:street": "ThoroughfareName",
+    "addr:city": "LocalityName",
+    "addr:postcode": "PostalCode",
+    "addr:country": "CountryName"
+}
+
+
 class CityObject:
-    def __init__(self, object_type: Enum, geom: Polygon, properties: dict):
+    def __init__(self, object_type: Enum, geometry: shape, properties: dict):
+        self.object_type = object_type
         self.properties = properties
-        self.geom = geom
+        self.geom = geometry
         self.height = self._parse_height()
         self.vertices = []
-        self.object = object_type.value
+        self.object = self.object_type.value
+        self.self_construct()
 
-    def get_object(self):
+    def self_construct(self):
         self.object.update({"attributes": self._parse_attributes()})
         self.object.update({"address": self._parse_address()})
         self.object.update({"geometry": self._parse_geometries_and_surfaces()})
+        self.object.update({"vertices": self._get_vertices()})
+
+    def get_object(self):
         return self.object
 
-    def get_height(self):
-        return self.height
-
-    def get_vertices(self):
+    def _get_vertices(self):
         return self.vertices
 
     def _parse_address(self) -> dict:
@@ -137,15 +131,15 @@ class CityObject:
                 in ATTR_KEY_MAPPING.keys() and v is not None}
         attr.update({k: v for k, v in self.properties.items()
                      if k not in ATTR_KEY_MAPPING.keys()})
-        if "measuredHeight" in attr.keys():
+        if "measuredHeight" in attr.keys():     # convert height to float type
             attr["measuredHeight"] = float(attr["measuredHeight"])
         return attr
 
     def _parse_height(self) -> float:
-        if self.properties["height"] and float(self.properties["height"]) > 0:
+        if "height" in self.properties.keys() and float(self.properties["height"]) > 0:
             return float(self.properties["height"])
         else:
-            return 10.0
+            return float(0.0)
 
     def _process_ext_ring(self, surfaces: List) -> List:
         ext_ring = list(self.geom.exterior.coords)  # -- exterior ring of each
@@ -158,6 +152,7 @@ class CityObject:
         return ext_ring
 
     def _process_int_rings(self, surfaces: List) -> List:
+        hello = "hello"
         int_rings = [] # -- could be multiple holes, one interior ring for each footprint
         interiors = list(self.geom.interiors)
         for interior in interiors:
@@ -179,7 +174,7 @@ class CityObject:
     def _parse_geometries_and_surfaces(self) -> List:
         # define empty list for geometry
         geometry = []
-        geo = {"type": "Solid", "lod": 1.0}
+        geo = {"type": "Solid", "lod": 1.2}
 
         surfaces = []
         ext_ring = self._process_ext_ring(surfaces)
@@ -236,6 +231,7 @@ class CityJSON:
     def __init__(self, schema_obj: CityJSONSchema, city_objects: dict,
                  vertices: List, metadata: dict = None):
         self.schema_obj = schema_obj
+        self.schema = schema_obj.fetch_schema("cityjson")
         self.city_objects = city_objects
         self.vertices = vertices
         self.cityjson = {
@@ -248,3 +244,6 @@ class CityJSON:
 
     def get_cityjson(self):
         return self.cityjson
+
+    def validate(self):
+        jsonschema.validate(self.cityjson, self.schema)
