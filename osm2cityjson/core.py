@@ -1,39 +1,48 @@
 from pathlib import Path
-from os import makedirs
 
 import click
-import json
-import sys
-import copy
-import glob
 
+from osm.osm import OSM
 from osm.osm_content_handler import OSMContentHandler
+from osm2cityjson.osm2cityjson import OSM2CityJSON
+from osm2cityjson.osm2geojson import OSM2GeoJSON
 from util.logging import Logger
 
 
-
 @click.command()
-@click.option('--input_file', '-i', required=True, type=str)
-
-@click.option('--output_file', '-o', required=True, type=str)
-@click.option('--debug_mode', '-d', required=True, type=bool)
-def cli():
+@click.option('--input_file', '-i',
+              required=True, type=click.Path(exists=True, resolve_path=True),
+              help='Specify input file.')
+@click.option('--output_dir', '-o',
+              required=True, type=click.Path(writable=True, resolve_path=True),
+              help='Specify output file directory. Input file basename will '
+                   'be used, but amended with appropriate output file '
+                   'extension.')
+@click.option('--debug_mode', '-d',
+              default=False, show_default=True,
+              required=True, type=bool,
+              help='Enable/Disable debug mode.')
+@click.option('--output_geojson', '-out-geojson',
+              default=False, show_default=True,
+              required=False, type=bool,
+              help='Whether or not to output alternate geojson format.')
+def cli(input_file, output_dir, debug_mode, output_geojson):
     print(f"osm2cityjson cli")
-    logger = Logger(debug=False)
-
-
-
-def output_cityjson(
-        input_filepath: Path, output_dir: Path, logger: Logger):
-    xml_handler = OSMContentHandler()
-    osm = OSM(input_filepath, xml_handler, logger)
-    ways, nodes = self.osm.run()
-    osm2cityjson = OSM2CityJSON(self.ways, self.nodes, self.logger,
-                                self.cityjson_path)
-    osm2cityjson.run()
-
-
-
+    handler = OSMContentHandler()
+    logger = Logger(debug=debug_mode)
+    print(input_file, type(input_file))
+    cityjson_path = Path(output_dir) / f'{Path(input_file).stem}.cityjson'
+    print(cityjson_path, type(cityjson_path))
+    osm = OSM(Path(input_file), handler, logger)
+    ways, nodes = osm.run()
+    OSM2CityJSON(ways, nodes, logger, cityjson_path).run()
+    if output_geojson:
+        geojson_path = Path(output_dir) / f'{Path(input_file).stem}.geojson'
+        OSM2GeoJSON(ways=ways,
+                    nodes=nodes,
+                    logger=logger,
+                    geojson_path=geojson_path,
+                    geojson_name="Building GeoJSON").run()
 
 
 
