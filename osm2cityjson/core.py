@@ -22,7 +22,7 @@ from util.logging import Logger
               default=False, show_default=True,
               required=True, type=bool,
               help='Enable/Disable debug mode.')
-@click.option('--output_geojson', '-out-geojson',
+@click.option('--output_geojson', '-gjson',
               default=False, show_default=True,
               required=False, type=bool,
               help='Whether or not to output alternate geojson format.')
