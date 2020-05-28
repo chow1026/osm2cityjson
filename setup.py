@@ -17,7 +17,8 @@ required_packages = [
     'scipy',
     'jsonref',
     'click',
-    'jsonschema'
+    'jsonschema',
+    'geojson-rewind'
 ]
 
 setup(
