@@ -14,7 +14,7 @@ from util.logging import Logger
               required=True, type=click.Path(exists=True, resolve_path=True),
               help='Specify input file.')
 @click.option('--output_dir', '-o',
-              required=True, type=click.Path(writable=True, resolve_path=True),
+              required=True, type=click.Path(resolve_path=True),
               help='Specify output file directory. Input file basename will '
                    'be used, but amended with appropriate output file '
                    'extension.')
